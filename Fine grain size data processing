@@ -1,0 +1,55 @@
+rm(list=ls()) 
+setwd("")
+df1<-data.frame(read.csv("data.csv", sep = ";"))
+nam <- names(df1)
+
+# silt fractions
+r <- c(31, 16, 8, 4, 2)
+y = df1$HD
+inter <- function(x){
+  res <- approx(y, x, xout = r)$y
+  return(res)
+}
+
+tab <- as.data.frame(apply(df1,2,inter), row.names = nam)
+perc <- data.frame(c(df1[2,] - tab[1,], tab[1,]-tab[2,], tab[2,]-tab[3,], tab[3,]-tab[4,], tab[4,]-tab[5,], tab[5,]))
+m <- data.frame(matrix(perc,nrow = 6, byrow = TRUE))
+fractions = c('very coarse silt', 'coarse silt', 'medium silt', 'fine silt', 'very fine silt', 'clay')
+row.names(m) <- fractions
+colnames(m) <- nam
+m[1] <- NULL
+#m
+
+m2 <- apply(m,2,as.character)
+#write.csv(m2, file = "s_c_coreN.csv", row.names=fractions)
+
+# sortable silt %
+y = df1$HD
+inter2 <- function(x){
+  res <- approx(y, x, xout = 10)$y
+  return(res)
+}
+
+tab2 <- as.data.frame(apply(df1,2,inter2), row.names = nam)
+ss <- as.data.frame((100 - tab2 )[,1], row.names = nam)
+write.csv(apply(ss,2,as.character), file = "SS%_pro.csv", row.names=nam)
+
+# sortable silt mean
+df2 <- rbind(df1[df1$HD > 10, ], t(tab2))
+write.csv(df2, file = "forSS.csv")
+
+colMax <- function(x) sapply(df1, max, na.rm = TRUE)
+maxx <- colMax(df2)
+mean <- (maxx + df2[nrow(df2),])/2 #new mean
+
+y = df2$HD
+inter <- function(x){
+  res <- approx(x, y, xout = mean)$y
+  return(res)
+}
+
+tab3 <- as.data.frame(apply(df2,2,inter), row.names = nam)
+
+ssmean <- data.frame(diag(as.matrix(tab3)))
+as.data.frame(ssmean, row.names = names(df1)) 
+write.csv(ssmean, file = "ssmean_coreN_new.csv")
