@@ -1,55 +1,75 @@
-rm(list=ls()) 
+rm(list=ls())
 setwd("")
-df1<-data.frame(read.csv("data.csv", sep = ";"))
+df1<-data.frame(read.csv("core.csv", sep = ";"))
 nam <- names(df1)
+head(df1)
+plot(df1$HD,df1$X6.5, log = 'x')
+lines(df1$HD, df1$X353, type = 'p', col = 'red')
 
-# silt fractions
-r <- c(31, 16, 8, 4, 2)
+# silt fractions-----------
 y = df1$HD
-inter <- function(x){
-  res <- approx(y, x, xout = r)$y
+inter <- function(x){             # interpolation in boundaries
+  res <- approx(y, x, xout = c(31, 16, 8, 4, 2))$y
   return(res)
 }
 
-tab <- as.data.frame(apply(df1,2,inter), row.names = nam)
-perc <- data.frame(c(df1[2,] - tab[1,], tab[1,]-tab[2,], tab[2,]-tab[3,], tab[3,]-tab[4,], tab[4,]-tab[5,], tab[5,]))
-m <- data.frame(matrix(perc,nrow = 6, byrow = TRUE))
-fractions = c('very coarse silt', 'coarse silt', 'medium silt', 'fine silt', 'very fine silt', 'clay')
-row.names(m) <- fractions
-colnames(m) <- nam
-m[1] <- NULL
-#m
+tab <- as.data.frame(apply(df1,2,inter))
+#install.packages('data.table')
+library(data.table)
+delta <- tab - shift(tab, n=-1, fill=NA, type=c("lag"))
+colMax <- function(x) sapply(df1, max, na.rm = TRUE)
+fractions <- rbind(colMax(df1) - tab[1,], delta[-c(nrow(delta)),], tab[nrow(tab),])
+row.names(fractions) <- c('very coarse silt', 'coarse silt', 'medium silt', 'fine silt', 'very fine silt', 'clay')
+#colSums(fractions)
 
-m2 <- apply(m,2,as.character)
-#write.csv(m2, file = "s_c_coreN.csv", row.names=fractions)
-
-# sortable silt %
-y = df1$HD
-inter2 <- function(x){
+# sortable silt %-----------
+inter2 <- function(x){                  #interpolation in 10 mkm
   res <- approx(y, x, xout = 10)$y
   return(res)
 }
+ten <- apply(df1,2,inter2) # 10 mkm
+ss <- as.data.frame((colMax(df1) - ten)); names(ss)[1] <- 'SS%' # SS percent
 
-tab2 <- as.data.frame(apply(df1,2,inter2), row.names = nam)
-ss <- as.data.frame((100 - tab2 )[,1], row.names = nam)
-write.csv(apply(ss,2,as.character), file = "SS%_pro.csv", row.names=nam)
+# sortable silt mean size---------
+df2 <- rbind(df1[df1$HD > 10,], ten) #all above 10 and 10
 
-# sortable silt mean
-df2 <- rbind(df1[df1$HD > 10, ], t(tab2))
-write.csv(df2, file = "forSS.csv")
+# calculating geometric mean
+#install.packages("EnvStats")
+library(EnvStats)
+mean <- function(x) sapply (df2, geoMean, na.rm = TRUE)
+mean_geom <- mean(df2)
 
-colMax <- function(x) sapply(df1, max, na.rm = TRUE)
-maxx <- colMax(df2)
-mean <- (maxx + df2[nrow(df2),])/2 #new mean
-
+# finding HD values corresponding to geometric mean percent
 y = df2$HD
-inter <- function(x){
-  res <- approx(x, y, xout = mean)$y
+inter3 <- function(x){
+  res <- approx(x, y, xout = mean_geom)$y
   return(res)
 }
 
-tab3 <- as.data.frame(apply(df2,2,inter), row.names = nam)
+tab2 <- as.data.frame(apply(df2,2,inter3), row.names = nam)
+ssmean <- data.frame(diag(as.matrix(tab2)), row.names = nam); names(ssmean)[1] <- 'SSmean'
+ssmean_phi <- -log2(ssmean/1000); names(ssmean_phi)[1] <- 'SSmean_phi'
 
-ssmean <- data.frame(diag(as.matrix(tab3)))
-as.data.frame(ssmean, row.names = names(df1)) 
-write.csv(ssmean, file = "ssmean_coreN_new.csv")
+output <- cbind(t(fractions), ss, ssmean, ssmean_phi)[-c(1),]
+#write.csv(output, file = "ss_coreN.csv")
+
+x<-output$SSmean
+y<-output$`SS%`
+plot(x, y) # plot SS vs SSmean
+
+# running downcore correlation-------------
+#https://quantpalaeo.wordpress.com/2013/01/04/running-correlations-running-into-problems
+z<-as.numeric(sub(".", "", row.names(output))) #extract sample depth
+library(gtools)
+x11(height=5,width=7)
+par(mar=c(3,3,1,3),mgp=c(1.5,.5,0), mfrow=c(1,2))
+plot(z,x, type="l", ylab="SS mean", xlab="depth")
+par(new=T)# treat the graph window as a new window, so a new graph can be plotted without erasing the old
+plot(z,y, col=2, ann=F, type="l", axes=F)
+axis(4)
+mtext(side=4, text="SS%", line=1.5)
+
+rc<-running(x,y,fun=cor, width=7) # calculate running correlation
+plot(z[1:length(rc)],rc, ylab="Correlation", type="l", xlab="depth")
+m <- rep(0.5,length.out=length(rc))
+lines(z[1:length(rc)], m, col = 'blue')
